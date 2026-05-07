@@ -1,6 +1,7 @@
 # protocol.py
 
 import struct
+import json 
 
 HEADER_SIZE = 4
 
@@ -33,3 +34,12 @@ def recv_frame(sock) -> bytes:
         return b""
 
     return recv_exact(sock, length)
+
+def send_packet(sock, packet: dict):
+    data = json.dumps(packet).encode("utf-8")
+    send_frame(sock, data)
+
+
+def recv_packet(sock) -> dict:
+    data = recv_frame(sock)
+    return json.loads(data.decode("utf-8"))
