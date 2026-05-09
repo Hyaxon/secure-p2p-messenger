@@ -13,13 +13,27 @@ from crypto_utils import (
     decrypt_message,
 )
 
+
 class PeerToPeerConnection:
+    """
+    Manages the TCP connection and messaging protocol.
+
+    Handles hosting, connecting, session setup, encrypted handshake,
+    encrypted message sending/receiving, rekeying, and disconnection.
+    """
+
     def __init__(self, on_status=None, on_message=None):
+        """
+        Initialize connection state and optional GUI callbacks.
+
+        on_status is called with network/status messages.
+        on_message is called when a decrypted message is received.
+        """
         self.socket = None
-        self.server_socket = None 
-        self.on_status = on_status 
+        self.server_socket = None
+        self.on_status = on_status
         self.on_message = on_message
-        self.running = False 
+        self.running = False
 
         self.password = None
         self.salt = None
@@ -32,14 +46,18 @@ class PeerToPeerConnection:
         self.rekey_every = 24
 
     def _status(self, message):
+        """Send a status update to the registered callback."""
         if self.on_status:
             self.on_status(message)
+
     def _message(self, message):
+        """Send a received message object to the registered callback."""
         if self.on_message:
             self.on_message(message)
 
     def start_host(self, port, password):
-        self.password = password 
+        """Start a background thread that listens for an incoming TCP connection."""
+        self.password = password
 
         thread = threading.Thread(
             target=self._host_thread,
@@ -50,7 +68,12 @@ class PeerToPeerConnection:
         thread.start()
 
     def _host_thread(self, port):
+        """
+        Host the TCP server and perform the secure session setup.
 
+        The host generates the salt/session ID, sends them to the client,
+        verifies client hello, and replies with server hello.
+        """
         try:
             self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -113,7 +136,8 @@ class PeerToPeerConnection:
             self._status(f"Host error: {e}")
 
     def connect_to_host(self, host_ip, port, password):
-        self.password = password 
+        """Start a background thread that connects to a TCP host."""
+        self.password = password
 
         thread = threading.Thread(
             target=self._connect_thread,
@@ -122,8 +146,14 @@ class PeerToPeerConnection:
         )
 
         thread.start()
-    
+
     def _connect_thread(self, ip, port):
+        """
+        Connect to the TCP host and perform the secure session setup.
+
+        The client receives the salt/session ID, derives keys, sends
+        client hello, and verifies server hello.
+        """
         try:
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((ip, port))
@@ -170,11 +200,13 @@ class PeerToPeerConnection:
             self._status("Secure session verified.")
 
             self._start_receive_loop()
+
         except Exception as e:
             self.close()
             self._status(f"Connection error: {e}")
 
     def _start_receive_loop(self):
+        """Start the background thread that receives packets."""
         thread = threading.Thread(
             target=self._receive_loop,
             daemon=True
@@ -182,6 +214,12 @@ class PeerToPeerConnection:
         thread.start()
 
     def _receive_loop(self):
+        """
+        Receive and decrypt incoming message packets.
+
+        Packets with new rekey counters advance the session key.
+        Packets with old rekey counters are rejected.
+        """
         while self.running:
             try:
                 packet = recv_packet(self.socket)
@@ -219,12 +257,16 @@ class PeerToPeerConnection:
 
                 else:
                     self._status(f"Unknown packet type received: {packet_type}")
+
             except Exception as e:
                 self.close()
                 self._status(f"Disconnected: {e}")
                 break
 
     def send_text(self, message: str):
+        """
+        Encrypt and send a plaintext chat message.
+        """
         if not self.socket or not self.running:
             raise ConnectionError("Not connected")
 
@@ -256,9 +298,11 @@ class PeerToPeerConnection:
         return encrypted_payload
 
     def is_connected(self):
+        """Return True only when the secure session is connected and verified."""
         return self.socket is not None and self.running and self.verified
-    
+
     def _derive_keys(self):
+        """Derive the master key and current session key."""
         self.master_key = derive_master_key(self.password, self.salt)
         self.session_key = derive_session_key(
             self.master_key,
@@ -267,6 +311,7 @@ class PeerToPeerConnection:
         )
 
     def _update_session_key(self, rekey_counter):
+        """Update the active session key using a new rekey counter."""
         self.rekey_counter = rekey_counter
         self.session_key = derive_session_key(
             self.master_key,
@@ -275,6 +320,7 @@ class PeerToPeerConnection:
         )
 
     def close(self):
+        """Close open sockets and reset verification."""
         self.running = False
         self.verified = False
 

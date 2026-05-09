@@ -20,10 +20,18 @@ from PySide6.QtWidgets import (
 
 
 class SecureMessengerGUI(QWidget):
+    """
+    GUI for the secure p2p messenger.
+
+    The GUI collects connection information, starts host/client connections,
+    sends messages, and displays plaintext, ciphertext, nonces, and status logs.
+    """
+
     status_signal = Signal(str)
     message_signal = Signal(object)
 
     def __init__(self):
+        """Initialize the GUI and connect network callbacks to Qt signals."""
         super().__init__()
 
         self.connection = PeerToPeerConnection(
@@ -40,6 +48,7 @@ class SecureMessengerGUI(QWidget):
         self.build_widgets()
 
     def build_widgets(self):
+        """Create and arrange all GUI widgets."""
         main_layout = QVBoxLayout()
 
         connection_layout = QHBoxLayout()
@@ -100,6 +109,7 @@ class SecureMessengerGUI(QWidget):
         self.set_disconnected_state()
 
     def on_host_clicked(self):
+        """Validate input and start listening as the TCP host."""
         password = self.password_input.text()
 
         if not password:
@@ -117,13 +127,12 @@ class SecureMessengerGUI(QWidget):
         self.send_button.setEnabled(False)
         self.message_input.setEnabled(False)
 
-        self.log("[SYSTEM] Starting host...")
+        self.log("[SYSTEM] Starting host...", "gray")
         self.connection.start_host(port, password)
 
-
     def on_connect_clicked(self):
+        """Validate input and connect to a TCP host."""
         ip = self.ip_input.text()
-
         password = self.password_input.text()
 
         if not password:
@@ -142,11 +151,11 @@ class SecureMessengerGUI(QWidget):
         self.message_input.setEnabled(False)
 
         self.status_label.setText(f"Status: Connecting to {ip}:{port}")
-        self.set_connection_controls_enabled(False)
-        self.log(f"[SYSTEM] Connecting to {ip}:{port}...")
+        self.log(f"[SYSTEM] Connecting to {ip}:{port}...", "gray")
         self.connection.connect_to_host(ip, port, password)
 
     def on_send_clicked(self):
+        """Encrypt and send the typed message through the active connection."""
         message = self.message_input.text()
 
         if not message:
@@ -154,8 +163,8 @@ class SecureMessengerGUI(QWidget):
 
         try:
             encrypted_payload = self.connection.send_text(message)
-            
-            self.log("-" * 60)
+
+            self.log("-" * 60, "gray")
             self.log(f"[SENT PLAINTEXT] {message}")
             self.log(f"[SENT NONCE] {encrypted_payload['nonce']}", "gray")
             self.log(f"[SENT CIPHERTEXT] {encrypted_payload['ciphertext']}", "gray")
@@ -166,44 +175,57 @@ class SecureMessengerGUI(QWidget):
             QMessageBox.critical(self, "Send Error", str(e))
 
     def handle_network_status(self, message):
+        """Forward network status updates to the GUI thread."""
         self.status_signal.emit(message)
 
     def handle_network_message(self, message):
+        """Forward received message packets to the GUI thread."""
         self.message_signal.emit(message)
 
     def display_received_message(self, packet_info):
-        self.log("-" * 60)
+        """Display received ciphertext, nonce, key generation, and plaintext."""
+        self.log("-" * 60, "gray")
         self.log(f"[RECEIVED CIPHERTEXT] {packet_info['ciphertext']}", "gray")
         self.log(f"[RECEIVED NONCE] {packet_info['nonce']}", "gray")
         self.log(f"[DECRYPTED PLAINTEXT] {packet_info['plaintext']}")
         self.log(f"[KEY GENERATION] {packet_info['rekey_counter']}", "gray")
 
     def set_connection_controls_enabled(self, enabled: bool):
+        """Enable or disable connection-related inputs and buttons."""
         self.ip_input.setEnabled(enabled)
         self.port_input.setEnabled(enabled)
         self.password_input.setEnabled(enabled)
         self.host_button.setEnabled(enabled)
         self.connect_button.setEnabled(enabled)
 
-
     def set_connected_state(self):
+        """Update the GUI for an active verified secure session."""
         self.set_connection_controls_enabled(False)
         self.disconnect_button.setEnabled(True)
         self.send_button.setEnabled(True)
         self.message_input.setEnabled(True)
 
-
     def set_disconnected_state(self):
+        """Update the GUI for no active connection."""
         self.set_connection_controls_enabled(True)
         self.disconnect_button.setEnabled(False)
         self.send_button.setEnabled(False)
         self.message_input.setEnabled(False)
 
     def update_status_from_thread(self, message):
+        """Display network status messages and update GUI connection state."""
         self.status_label.setText(f"Status: {message}")
-        self.log(f"[NETWORK] {message}", "red")
 
         lowered = message.lower()
+        is_error = (
+            "disconnected" in lowered
+            or "connection error" in lowered
+            or "host error" in lowered
+            or "failed" in lowered
+            or "rejected" in lowered
+        )
+
+        self.log(f"[NETWORK] {message}", "red" if is_error else "gray")
 
         if "secure session verified" in lowered:
             self.set_connected_state()
@@ -216,6 +238,7 @@ class SecureMessengerGUI(QWidget):
             self.set_disconnected_state()
 
     def on_disconnect_clicked(self):
+        """Close the current connection and reset the GUI."""
         self.connection.close()
         self.password_input.clear()
         self.status_label.setText("Status: Disconnected")
@@ -223,6 +246,7 @@ class SecureMessengerGUI(QWidget):
         self.set_disconnected_state()
 
     def log(self, text, color=None):
+        """Append a line to the log area with optional text color."""
         cursor = self.log_area.textCursor()
         cursor.movePosition(QTextCursor.End)
 
@@ -239,11 +263,12 @@ class SecureMessengerGUI(QWidget):
         self.log_area.ensureCursorVisible()
 
     def run(self):
+        """Show the application window."""
         self.show()
 
 
-
 def run_app():
+    """Create the Qt application and start the GUI event loop."""
     app = QApplication(sys.argv)
     window = SecureMessengerGUI()
     window.run()
